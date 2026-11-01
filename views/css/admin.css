@@ -1,0 +1,53 @@
+/**
+ * josraenviogratis — back-office (solo lo que no da PrestaShop)
+ *
+ * @author    josra
+ * @copyright josra
+ */
+.josraenviogratis-admin .jeg-tabs {
+  margin-bottom: 15px;
+}
+.josraenviogratis-admin .jeg-engine {
+  margin-top: 10px;
+}
+.jeg-picker .jeg-chips {
+  margin-bottom: 6px;
+}
+.jeg-picker .jeg-chip {
+  display: inline-block;
+  margin: 0 4px 4px 0;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-weight: normal;
+  white-space: normal;
+}
+.jeg-picker .jeg-chip-del {
+  margin-left: 4px;
+  color: inherit;
+  font-weight: bold;
+  text-decoration: none;
+}
+.jeg-picker .jeg-search-wrap {
+  position: relative;
+  max-width: 520px;
+}
+.jeg-picker .jeg-results {
+  position: absolute;
+  z-index: 50;
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+.jeg-picker .jeg-results:empty {
+  display: none;
+}
+.jeg-swap-filter {
+  margin-bottom: 4px;
+}
+.jeg-recent .label {
+  display: inline-block;
+  margin: 2px 2px 2px 0;
+}

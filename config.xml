@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<module>
+    <name>josraenviogratis</name>
+    <displayName><![CDATA[Envío gratis con reglas]]></displayName>
+    <version><![CDATA[1.0.0]]></version>
+    <description><![CDATA[Portes gratis o rebajados por importe, productos, zona, transportista y más, sin reglas de descuento: el transporte sale a 0 € en el pedido y en la factura.]]></description>
+    <author><![CDATA[josra]]></author>
+    <tab><![CDATA[shipping_logistics]]></tab>
+    <confirmUninstall><![CDATA[Se borrarán las reglas y los transportistas volverán a como estaban. ¿Seguro?]]></confirmUninstall>
+    <is_configurable>1</is_configurable>
+    <need_instance>0</need_instance>
+    <limited_countries></limited_countries>
+</module>

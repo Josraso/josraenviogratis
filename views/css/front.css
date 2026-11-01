@@ -1,0 +1,72 @@
+/**
+ * josraenviogratis — front
+ *
+ * @author    josra
+ * @copyright josra
+ */
+.josraenviogratis-box:empty {
+  display: none;
+}
+.josraenviogratis-box {
+  margin: 0.75rem 0;
+}
+.jeg-box {
+  padding: 0.75rem 1rem;
+  border: 1px solid #e3e6ea;
+  border-radius: 4px;
+  background: #fafbfc;
+  font-size: 0.95em;
+  line-height: 1.4;
+}
+.jeg-line,
+.jeg-achieved,
+.jeg-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.jeg-line + .jeg-line {
+  margin-top: 0.35rem;
+}
+.jeg-icon {
+  flex: 0 0 auto;
+  width: 1.35em;
+  height: 1.35em;
+}
+.jeg-mode-achieved {
+  border-color: #b9e2c4;
+  background: #eef9f1;
+  color: #1e7a3c;
+  font-weight: 600;
+}
+.jeg-progress {
+  height: 6px;
+  margin-top: 0.6rem;
+  border-radius: 3px;
+  background: #e3e6ea;
+  overflow: hidden;
+}
+.jeg-progress-bar {
+  height: 100%;
+  border-radius: 3px;
+  background: #2fb14f;
+  transition: width 0.3s ease;
+}
+.jeg-rule-title {
+  margin-top: 0.4rem;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.jeg-badge {
+  display: inline-flex;
+  margin: 0.5rem 0;
+  padding: 0.3rem 0.65rem;
+  border-radius: 3px;
+  background: #eef9f1;
+  color: #1e7a3c;
+  font-weight: 600;
+  font-size: 0.9em;
+}
+.jeg-pos-modal {
+  margin-top: 0.75rem;
+}
