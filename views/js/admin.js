@@ -157,6 +157,112 @@
     });
   }
 
+  /* ---------------- Pestañas del formulario de regla ---------------- */
+
+  function paneCount($p) {
+    var n = $p.find('.jeg-chip').length;
+    n += $p.find('.selectedSwap option').length;
+    $p.find('select[multiple]').not('.availableSwap, .selectedSwap').each(function () {
+      n += $(this).find('option:selected').length;
+    });
+    $p.find('input[type=text]').not('.jeg-psearch, .jeg-swap-filter').each(function () {
+      var v = $.trim($(this).val());
+      if (v !== '' && v !== '0' && !/^0+([.,]0+)?$/.test(v)) {
+        n++;
+      }
+    });
+    $p.find('select[name=customer_type]').each(function () {
+      if ($(this).val() !== '0') {
+        n++;
+      }
+    });
+    $p.find('input[type=radio][name=first_order]:checked').each(function () {
+      if ($(this).val() === '1') {
+        n++;
+      }
+    });
+    return n;
+  }
+
+  function initTabs($wrap, $form) {
+    var $panels = $form.children('.panel');
+    if ($panels.length < 2) {
+      return;
+    }
+    var key = 'jegRuleTab';
+    var $box = $('<div class="panel jeg-form-box"></div>');
+    var heading = $wrap.attr('data-heading') || '';
+    $box.append($('<div class="panel-heading"></div>').append('<i class="icon-truck"></i> ').append(document.createTextNode(heading)));
+    var $nav = $('<ul class="nav nav-tabs jeg-form-tabs"></ul>');
+    $box.append($nav);
+    var $footer = $panels.last().children('.panel-footer').detach();
+    $panels.first().before($box);
+
+    $panels.each(function (i) {
+      var $p = $(this);
+      var $h = $p.children('.panel-heading');
+      var label = $.trim($h.text());
+      var icon = $h.find('i').first().attr('class') || '';
+      $h.remove();
+      $p.removeClass('panel').addClass('jeg-pane').attr('data-jeg-pane', i);
+      $box.append($p);
+      var $a = $('<a href="#" class="nav-link"></a>').attr('data-jeg-pane', i);
+      if (icon) {
+        $a.append($('<i></i>').attr('class', icon)).append(' ');
+      }
+      $a.append(document.createTextNode(label));
+      if (i > 0) {
+        $a.append(' <span class="badge jeg-count"></span>');
+      }
+      $nav.append($('<li class="nav-item"></li>').append($a));
+    });
+    if ($footer.length) {
+      $box.append($footer);
+    }
+
+    function show(i) {
+      $box.children('.jeg-pane').hide().filter('[data-jeg-pane=' + i + ']').show();
+      $nav.find('li').removeClass('active').find('a').removeClass('active');
+      $nav.find('a[data-jeg-pane=' + i + ']').addClass('active').parent().addClass('active');
+      try {
+        window.sessionStorage.setItem(key, String(i));
+      } catch (e) {
+        // sin almacenamiento: no pasa nada
+      }
+    }
+
+    function counts() {
+      $box.children('.jeg-pane').each(function () {
+        var i = $(this).attr('data-jeg-pane');
+        if (i === '0') {
+          return;
+        }
+        var n = paneCount($(this));
+        $nav.find('a[data-jeg-pane=' + i + '] .jeg-count').text(n ? n : '').toggle(n > 0);
+      });
+    }
+
+    $nav.on('click', 'a', function (e) {
+      e.preventDefault();
+      show($(this).attr('data-jeg-pane'));
+    });
+    $form.on('change input click', function () {
+      setTimeout(counts, 0);
+    });
+
+    var start = 0;
+    try {
+      var saved = window.sessionStorage.getItem(key);
+      if (saved !== null && $box.children('[data-jeg-pane=' + saved + ']').length && $wrap.closest('.josraenviogratis-admin').find('.alert-danger').length) {
+        start = saved;
+      }
+    } catch (e) {
+      start = 0;
+    }
+    show(start);
+    counts();
+  }
+
   /* ---------------- Efecto ---------------- */
 
   function initEffect($form) {
@@ -175,6 +281,7 @@
       var $form = $wrap.find('form').first();
       initSwap($form);
       initEffect($form);
+      initTabs($wrap, $form);
       $wrap.find('.jeg-picker').each(function () {
         initPicker($(this));
       });

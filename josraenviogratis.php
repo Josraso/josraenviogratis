@@ -31,7 +31,7 @@ class Josraenviogratis extends Module
     {
         $this->name = 'josraenviogratis';
         $this->tab = 'shipping_logistics';
-        $this->version = '1.0.0';
+        $this->version = '1.0.1';
         $this->author = 'josra';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -422,6 +422,10 @@ class Josraenviogratis extends Module
             $idRule = (int) $hit['rule']['id_rule'];
             $name = $hit['rule']['name'];
         }
+        if ($before === null && Validate::isLoadedObject($cart)) {
+            // Porte que habría cobrado PrestaShop sin la regla, para dejarlo anotado en el pedido.
+            $before = JosraEnvioGratisEngine::rawShipping($cart, (int) $order->id_carrier, true);
+        }
         Db::getInstance()->execute(
             'REPLACE INTO `' . _DB_PREFIX_ . 'josraenviogratis_order`
                 (`id_order`, `id_cart`, `id_rule`, `rule_name`, `id_carrier`, `cost_before`, `cost_after`, `date_add`)
@@ -462,7 +466,9 @@ class Josraenviogratis extends Module
             'jeg_order' => [
                 'rule_name' => $row['rule_name'],
                 'id_rule' => (int) $row['id_rule'],
-                'before' => $row['cost_before'] !== null ? JosraEnvioGratisEngine::formatPrice($row['cost_before'], $idCurrency) : '',
+                'before' => ($row['cost_before'] !== null && (float) $row['cost_before'] > (float) $row['cost_after'])
+                    ? JosraEnvioGratisEngine::formatPrice($row['cost_before'], $idCurrency) : '',
+                'free' => (float) $row['cost_after'] == 0,
                 'after' => JosraEnvioGratisEngine::formatPrice($row['cost_after'], $idCurrency),
                 'new_layout' => version_compare(_PS_VERSION_, '1.7.7.0', '>='),
             ],
@@ -1535,7 +1541,7 @@ class Josraenviogratis extends Module
         $forms = [];
 
         $forms[] = ['form' => [
-            'legend' => ['title' => $rule->id ? sprintf($this->l('Regla #%d'), (int) $rule->id) : $this->l('Nueva regla'), 'icon' => 'icon-truck'],
+            'legend' => ['title' => $this->l('General'), 'icon' => 'icon-cog'],
             'input' => [
                 ['type' => 'text', 'name' => 'name', 'label' => $this->l('Nombre interno'), 'required' => true, 'col' => 6,
                     'desc' => $this->l('Solo para ti: sale en el listado, en el simulador y en el pedido.'), ],
@@ -1557,7 +1563,7 @@ class Josraenviogratis extends Module
         ]];
 
         $forms[] = ['form' => [
-            'legend' => ['title' => $this->l('Importe, unidades y peso'), 'icon' => 'icon-money'],
+            'legend' => ['title' => $this->l('Importe y cantidades'), 'icon' => 'icon-money'],
             'description' => $this->l('Deja a 0 lo que no quieras usar.'),
             'input' => [
                 ['type' => 'text', 'name' => 'amount_min', 'label' => $this->l('Importe mínimo'), 'suffix' => $sign, 'class' => 'fixed-width-md'],
@@ -1581,12 +1587,12 @@ class Josraenviogratis extends Module
         ]];
 
         $forms[] = ['form' => [
-            'legend' => ['title' => $this->l('Productos que activan la regla'), 'icon' => 'icon-tags'],
-            'description' => $this->l('Si no eliges nada, no se mira. Un producto cuenta si está en la lista, en una de las categorías, o es de una de las marcas o proveedores.'),
+            'legend' => ['title' => $this->l('Productos'), 'icon' => 'icon-tags'],
+            'description' => $this->l('Productos que activan la regla. Si no eliges nada, no se mira. Un producto cuenta si está en la lista, en una de las categorías, o es de una de las marcas o proveedores.'),
             'input' => [
                 ['type' => 'html', 'name' => 'trig_products_html', 'label' => $this->l('Productos'),
                     'html_content' => $this->productPicker('trig_products', JosraEnvioGratisEngine::csv($rule->trig_products)), ],
-                ['type' => 'swap', 'name' => 'trig_categories', 'label' => $this->l('Categorías'), 'size' => 8,
+                ['type' => 'swap', 'name' => 'trig_categories', 'label' => $this->l('Categorías'), 'size' => 7,
                     'options' => ['query' => $this->getCategoryOptions(), 'id' => 'id', 'name' => 'name'], ],
                 ['type' => 'swap', 'name' => 'trig_manufacturers', 'label' => $this->l('Marcas'), 'size' => 6,
                     'options' => ['query' => $this->getManufacturerOptions(), 'id' => 'id', 'name' => 'name'], ],
@@ -1602,11 +1608,12 @@ class Josraenviogratis extends Module
         ]];
 
         $forms[] = ['form' => [
-            'legend' => ['title' => $this->l('Productos excluidos'), 'icon' => 'icon-ban'],
+            'legend' => ['title' => $this->l('Exclusiones'), 'icon' => 'icon-ban'],
+            'description' => $this->l('Productos que anulan la regla o que no cuentan para el importe. Si no eliges nada, no se mira.'),
             'input' => [
                 ['type' => 'html', 'name' => 'excl_products_html', 'label' => $this->l('Productos'),
                     'html_content' => $this->productPicker('excl_products', JosraEnvioGratisEngine::csv($rule->excl_products)), ],
-                ['type' => 'swap', 'name' => 'excl_categories', 'label' => $this->l('Categorías'), 'size' => 8,
+                ['type' => 'swap', 'name' => 'excl_categories', 'label' => $this->l('Categorías'), 'size' => 7,
                     'options' => ['query' => $this->getCategoryOptions(), 'id' => 'id', 'name' => 'name'], ],
                 ['type' => 'swap', 'name' => 'excl_manufacturers', 'label' => $this->l('Marcas'), 'size' => 6,
                     'options' => ['query' => $this->getManufacturerOptions(), 'id' => 'id', 'name' => 'name'], ],
@@ -1620,7 +1627,7 @@ class Josraenviogratis extends Module
         ]];
 
         $forms[] = ['form' => [
-            'legend' => ['title' => $this->l('Destino y transportistas'), 'icon' => 'icon-globe'],
+            'legend' => ['title' => $this->l('Destino y transporte'), 'icon' => 'icon-globe'],
             'description' => $this->l('Vacío = todos. Si eliges varias cosas tienen que cumplirse todas (por ejemplo, zona Europa y provincia Madrid).'),
             'input' => [
                 ['type' => 'swap', 'name' => 'carriers', 'label' => $this->l('Transportistas'), 'size' => 6,
@@ -1628,9 +1635,9 @@ class Josraenviogratis extends Module
                     'desc' => $this->l('Se guardan por referencia: si editas el transportista en PrestaShop la regla lo sigue reconociendo.'), ],
                 ['type' => 'swap', 'name' => 'zones', 'label' => $this->l('Zonas'), 'size' => 6,
                     'options' => ['query' => $this->getZoneOptions(), 'id' => 'id', 'name' => 'name'], ],
-                ['type' => 'swap', 'name' => 'countries', 'label' => $this->l('Países'), 'size' => 8,
+                ['type' => 'swap', 'name' => 'countries', 'label' => $this->l('Países'), 'size' => 7,
                     'options' => ['query' => $this->getCountryOptions(), 'id' => 'id', 'name' => 'name'], ],
-                ['type' => 'swap', 'name' => 'states', 'label' => $this->l('Provincias'), 'size' => 8,
+                ['type' => 'swap', 'name' => 'states', 'label' => $this->l('Provincias'), 'size' => 7,
                     'options' => ['query' => $this->getStateOptions(), 'id' => 'id', 'name' => 'name'], ],
             ],
         ]];
@@ -1668,7 +1675,7 @@ class Josraenviogratis extends Module
                 'options' => ['query' => $this->getCurrencyOptions(), 'id' => 'id', 'name' => 'name'], ];
         }
         $forms[] = ['form' => [
-            'legend' => ['title' => $this->l('Fechas, horario y tienda'), 'icon' => 'icon-calendar'],
+            'legend' => ['title' => $this->l('Fechas y horario'), 'icon' => 'icon-calendar'],
             'input' => $timeInputs,
             'submit' => ['title' => $this->l('Guardar'), 'name' => 'submitJegRule'],
             'buttons' => [[
@@ -1734,7 +1741,12 @@ class Josraenviogratis extends Module
         $helper->show_toolbar = false;
         $helper->fields_value = $values;
 
-        return '<div class="jeg-rule-form">' . $helper->generateForm($forms) . '</div>';
+        $heading = $rule->id
+            ? sprintf($this->l('Editando la regla #%d'), (int) $rule->id) . ($rule->name !== '' ? ' · ' . $rule->name : '')
+            : $this->l('Nueva regla');
+
+        return '<div class="jeg-rule-form" data-heading="' . htmlspecialchars($heading, ENT_QUOTES, 'UTF-8') . '">'
+            . $helper->generateForm($forms) . '</div>';
     }
 
     protected function num($v)

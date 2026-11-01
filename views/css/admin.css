@@ -51,3 +51,16 @@
   display: inline-block;
   margin: 2px 2px 2px 0;
 }
+.jeg-form-box .jeg-form-tabs {
+  margin: 0 0 15px;
+}
+.jeg-form-box .jeg-form-tabs .jeg-count {
+  margin-left: 4px;
+  background: #25b9d7;
+}
+.jeg-form-box .jeg-pane {
+  min-height: 220px;
+}
+.jeg-form-box .panel-footer {
+  margin-top: 15px;
+}
