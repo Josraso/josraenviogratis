@@ -31,7 +31,7 @@ class Josraenviogratis extends Module
     {
         $this->name = 'josraenviogratis';
         $this->tab = 'shipping_logistics';
-        $this->version = '1.0.2';
+        $this->version = '1.0.3';
         $this->author = 'josra';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -78,7 +78,7 @@ class Josraenviogratis extends Module
         foreach (array_keys($this->getConfigDefaults()) as $key) {
             Configuration::deleteByName($key);
         }
-        foreach (['JEG_TXT_REMAINING', 'JEG_TXT_ACHIEVED', 'JEG_TXT_PRODUCT', 'JEG_CARRIER_MODE', 'JEG_DB_VERSION'] as $key) {
+        foreach (array_merge($this->getTextKeys(), ['JEG_CARRIER_MODE', 'JEG_DB_VERSION']) as $key) {
             Configuration::deleteByName($key);
         }
 
@@ -142,27 +142,40 @@ class Josraenviogratis extends Module
         ];
     }
 
+    protected function getTextKeys()
+    {
+        return ['JEG_TXT_REMAINING', 'JEG_TXT_ACHIEVED', 'JEG_TXT_PRODUCT', 'JEG_TXT_PRODUCT_ACHIEVED', 'JEG_TXT_PRODUCT_REMAINING'];
+    }
+
     protected function getTextDefaults($iso)
     {
         $es = [
             'JEG_TXT_REMAINING' => 'Te faltan {amount} para tener portes gratis',
             'JEG_TXT_ACHIEVED' => '¡Tienes portes gratis en este pedido!',
             'JEG_TXT_PRODUCT' => 'Portes gratis con este producto',
+            'JEG_TXT_PRODUCT_ACHIEVED' => 'Con este producto tienes portes gratis',
+            'JEG_TXT_PRODUCT_REMAINING' => 'Añadiendo este producto te faltarían {amount} para tener portes gratis',
         ];
         $en = [
             'JEG_TXT_REMAINING' => 'Add {amount} more to get free shipping',
             'JEG_TXT_ACHIEVED' => 'Your order ships for free!',
             'JEG_TXT_PRODUCT' => 'Free shipping with this product',
+            'JEG_TXT_PRODUCT_ACHIEVED' => 'With this product your order ships for free',
+            'JEG_TXT_PRODUCT_REMAINING' => 'With this product you would need {amount} more for free shipping',
         ];
         $ca = [
             'JEG_TXT_REMAINING' => 'Et falten {amount} per tenir ports gratuïts',
             'JEG_TXT_ACHIEVED' => 'Tens ports gratuïts en aquesta comanda!',
             'JEG_TXT_PRODUCT' => 'Ports gratuïts amb aquest producte',
+            'JEG_TXT_PRODUCT_ACHIEVED' => 'Amb aquest producte tens ports gratuïts',
+            'JEG_TXT_PRODUCT_REMAINING' => 'Afegint aquest producte et faltarien {amount} per tenir ports gratuïts',
         ];
         $gl = [
             'JEG_TXT_REMAINING' => 'Fáltanche {amount} para ter portes gratis',
             'JEG_TXT_ACHIEVED' => 'Tes portes gratis neste pedido!',
             'JEG_TXT_PRODUCT' => 'Portes gratis con este produto',
+            'JEG_TXT_PRODUCT_ACHIEVED' => 'Con este produto tes portes gratis',
+            'JEG_TXT_PRODUCT_REMAINING' => 'Engadindo este produto faltaríanche {amount} para ter portes gratis',
         ];
         $map = ['es' => $es, 'ca' => $ca, 'gl' => $gl, 'eu' => $es, 'en' => $en];
 
@@ -176,7 +189,7 @@ class Josraenviogratis extends Module
                 Configuration::updateValue($key, $value);
             }
         }
-        foreach (['JEG_TXT_REMAINING', 'JEG_TXT_ACHIEVED', 'JEG_TXT_PRODUCT'] as $key) {
+        foreach ($this->getTextKeys() as $key) {
             $values = [];
             $changed = false;
             foreach (Language::getLanguages(false) as $lang) {
@@ -537,14 +550,30 @@ class Josraenviogratis extends Module
         if (!$idProduct) {
             return '';
         }
+        $ipa = 0;
+        $qty = 1;
+        if (isset($params['product'])) {
+            $p = $params['product'];
+            if (is_array($p) || $p instanceof ArrayAccess) {
+                $ipa = isset($p['id_product_attribute']) ? (int) $p['id_product_attribute'] : 0;
+                if (isset($p['quantity_wanted']) && (int) $p['quantity_wanted'] > 0) {
+                    $qty = (int) $p['quantity_wanted'];
+                } elseif (isset($p['minimal_quantity']) && (int) $p['minimal_quantity'] > 0) {
+                    $qty = (int) $p['minimal_quantity'];
+                }
+            }
+        }
+        if (!$ipa) {
+            $ipa = (int) Tools::getValue('id_product_attribute');
+        }
 
-        return $this->renderBox('product', $idProduct);
+        return $this->renderBox('product', $idProduct, $ipa, $qty);
     }
 
     /**
      * Contenedor que el JS refresca cuando cambia el carrito.
      */
-    public function renderBox($pos, $idProduct = 0)
+    public function renderBox($pos, $idProduct = 0, $ipa = 0, $qty = 1)
     {
         $key = $pos . '-' . (int) $idProduct;
         if (isset(self::$rendered[$key])) {
@@ -554,7 +583,7 @@ class Josraenviogratis extends Module
 
         return '<div class="josraenviogratis-box" data-jeg-pos="' . htmlspecialchars($pos, ENT_QUOTES, 'UTF-8') . '"'
             . ($idProduct ? ' data-jeg-product="' . (int) $idProduct . '"' : '') . '>'
-            . $this->renderInner($pos, $idProduct) . '</div>';
+            . $this->renderInner($pos, $idProduct, $ipa, $qty) . '</div>';
     }
 
     protected function getBarState()
@@ -575,7 +604,23 @@ class Josraenviogratis extends Module
     /**
      * HTML interior de una posición (también lo usa el controlador AJAX).
      */
-    public function renderInner($pos, $idProduct = 0)
+    /**
+     * Texto configurable con reserva al texto por defecto (por si aún no se ha abierto la configuración
+     * después de actualizar por FTP).
+     */
+    protected function text($key, $idLang)
+    {
+        $v = (string) Configuration::get($key, (int) $idLang);
+        if ($v === '') {
+            $lang = new Language((int) $idLang);
+            $def = $this->getTextDefaults(Validate::isLoadedObject($lang) ? $lang->iso_code : 'es');
+            $v = isset($def[$key]) ? $def[$key] : '';
+        }
+
+        return $v;
+    }
+
+    public function renderInner($pos, $idProduct = 0, $ipa = 0, $qty = 1)
     {
         if (!self::moduleEnabled()) {
             return '';
@@ -592,15 +637,17 @@ class Josraenviogratis extends Module
                 (int) $this->context->currency->id
             );
             if ($rule) {
-                $badge = (string) Configuration::get('JEG_TXT_PRODUCT', $idLang);
+                $badge = $this->text('JEG_TXT_PRODUCT', $idLang);
             }
             if ($s['JEG_SHOW_PRODUCT_BAR']) {
-                $state = $this->getBarState();
-                // En la ficha solo se informa de lo que falta o de las condiciones; la etiqueta de
-                // "conseguido" es para el carrito.
-                if ($state && $state['mode'] === 'achieved') {
-                    $state = null;
-                }
+                // En la ficha se cuenta el carrito MÁS el producto que se está viendo.
+                $state = JosraEnvioGratisEngine::productBarState(
+                    $this->context->cart,
+                    (int) $idProduct,
+                    (int) $ipa,
+                    max(1, (int) $qty),
+                    max(1, (int) $s['JEG_UNKNOWN_MAX'])
+                );
             }
         } else {
             $state = $this->getBarState();
@@ -614,9 +661,16 @@ class Josraenviogratis extends Module
         if ($state) {
             $view = ['mode' => $state['mode']];
             if ($state['mode'] === 'achieved') {
-                $view['text'] = (string) Configuration::get('JEG_TXT_ACHIEVED', $idLang);
-            } elseif ($state['mode'] === 'remaining') {
-                $tpl = (string) Configuration::get('JEG_TXT_REMAINING', $idLang);
+                $view['text'] = $this->text('JEG_TXT_ACHIEVED', $idLang);
+            } elseif ($state['mode'] === 'with_product') {
+                $view['mode'] = 'achieved';
+                $view['text'] = $this->text('JEG_TXT_PRODUCT_ACHIEVED', $idLang);
+            } elseif ($state['mode'] === 'remaining' || $state['mode'] === 'remaining_with') {
+                $view['mode'] = 'remaining';
+                $tpl = $this->text(
+                    $state['mode'] === 'remaining_with' ? 'JEG_TXT_PRODUCT_REMAINING' : 'JEG_TXT_REMAINING',
+                    $idLang
+                );
                 $amount = JosraEnvioGratisEngine::formatPrice($state['remaining'], $state['id_currency']);
                 $safe = htmlspecialchars($tpl, ENT_QUOTES, 'UTF-8');
                 if (strpos($tpl, '{amount}') !== false) {
@@ -1959,8 +2013,8 @@ class Josraenviogratis extends Module
                 ['type' => 'switch', 'name' => 'JEG_SHOW_MODAL', 'label' => $this->l('En la ventana de "producto añadido"'), 'is_bool' => true, 'values' => $yesNo,
                     'desc' => $this->l('Usa el hook displayCartModalFooter. Si tu tema no lo llama, no se verá ahí.'), ],
                 ['type' => 'switch', 'name' => 'JEG_SHOW_CHECKOUT', 'label' => $this->l('En el paso de transporte'), 'is_bool' => true, 'values' => $yesNo],
-                ['type' => 'switch', 'name' => 'JEG_SHOW_PRODUCT_BAR', 'label' => $this->l('"Te faltan X €" en la ficha de producto'), 'is_bool' => true, 'values' => $yesNo,
-                    'desc' => $this->l('La etiqueta de "Portes gratis con este producto" se controla desde cada regla.'), ],
+                ['type' => 'switch', 'name' => 'JEG_SHOW_PRODUCT_BAR', 'label' => $this->l('Aviso de portes en la ficha de producto'), 'is_bool' => true, 'values' => $yesNo,
+                    'desc' => $this->l('Calcula con el carrito más el producto que se está viendo, con la combinación y la cantidad elegidas, y se actualiza al cambiarlas.'), ],
                 ['type' => 'switch', 'name' => 'JEG_SHOW_PROGRESS', 'label' => $this->l('Barra de progreso'), 'is_bool' => true, 'values' => $yesNo],
                 ['type' => 'text', 'name' => 'JEG_UNKNOWN_MAX', 'label' => $this->l('Títulos a mostrar sin dirección'), 'class' => 'fixed-width-sm',
                     'desc' => $this->l('Mientras no sabemos la dirección del cliente se enseñan los textos públicos de las reglas de portes gratis, como máximo este número.'), ],
@@ -1968,13 +2022,18 @@ class Josraenviogratis extends Module
                     'desc' => $this->l('{amount} se sustituye por lo que falta. Si no lo pones, el importe va al final.'), ],
                 ['type' => 'text', 'name' => 'JEG_TXT_ACHIEVED', 'label' => $this->l('Etiqueta "portes gratis conseguidos"'), 'lang' => true, 'col' => 8,
                     'desc' => $this->l('Sale en el carrito solo cuando el pedido ya tiene portes gratis.'), ],
-                ['type' => 'text', 'name' => 'JEG_TXT_PRODUCT', 'label' => $this->l('Etiqueta en la ficha'), 'lang' => true, 'col' => 8],
+                ['type' => 'text', 'name' => 'JEG_TXT_PRODUCT', 'label' => $this->l('Etiqueta en la ficha'), 'lang' => true, 'col' => 8,
+                    'desc' => $this->l('Para los productos que por sí solos dan portes gratis (se activa en cada regla).'), ],
+                ['type' => 'text', 'name' => 'JEG_TXT_PRODUCT_ACHIEVED', 'label' => $this->l('Ficha: con este producto llega'), 'lang' => true, 'col' => 8,
+                    'desc' => $this->l('Sale en la ficha cuando el carrito más el producto que se está viendo (con su combinación y cantidad) ya tiene portes gratis.'), ],
+                ['type' => 'text', 'name' => 'JEG_TXT_PRODUCT_REMAINING', 'label' => $this->l('Ficha: con este producto aún falta'), 'lang' => true, 'col' => 8,
+                    'desc' => $this->l('{amount} se sustituye por lo que faltaría después de añadir el producto.'), ],
             ],
             'submit' => ['title' => $this->l('Guardar'), 'name' => 'submitJegDisplay'],
         ]];
 
         $values = $this->getSettings();
-        foreach (['JEG_TXT_REMAINING', 'JEG_TXT_ACHIEVED', 'JEG_TXT_PRODUCT'] as $key) {
+        foreach ($this->getTextKeys() as $key) {
             $values[$key] = [];
             foreach (Language::getLanguages(false) as $lang) {
                 $values[$key][(int) $lang['id_lang']] = (string) Configuration::get($key, (int) $lang['id_lang']);
@@ -2007,7 +2066,7 @@ class Josraenviogratis extends Module
             }
             Configuration::updateValue($key, $v);
         }
-        foreach (['JEG_TXT_REMAINING', 'JEG_TXT_ACHIEVED', 'JEG_TXT_PRODUCT'] as $key) {
+        foreach ($this->getTextKeys() as $key) {
             $vals = [];
             foreach (Language::getLanguages(false) as $lang) {
                 $id = (int) $lang['id_lang'];

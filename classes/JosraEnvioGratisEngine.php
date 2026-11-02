@@ -824,24 +824,7 @@ class JosraEnvioGratisEngine
 
         // Sin dirección: se enseñan los títulos públicos de las reglas.
         if (!$data['known']) {
-            $titles = [];
-            foreach ($free as $rule) {
-                $t = trim((string) $rule['title']);
-                if ($t === '' || isset($titles[$t])) {
-                    continue;
-                }
-                $r = null;
-                if (!self::staticChecks($rule, $data['id_shop'], $data['id_currency'], $r)
-                    || !self::customerChecks($rule, $data, $r)) {
-                    continue;
-                }
-                $titles[$t] = $t;
-                if (count($titles) >= (int) $maxTitles) {
-                    break;
-                }
-            }
-
-            return $titles ? ['mode' => 'unknown', 'titles' => array_values($titles)] : null;
+            return self::unknownTitles($free, $data, $maxTitles);
         }
 
         $candidates = [];
@@ -901,6 +884,196 @@ class JosraEnvioGratisEngine
                     ];
                 }
             }
+        }
+
+        return $best;
+    }
+
+    /**
+     * Datos de "carrito" para la ficha cuando no hay carrito todavía.
+     */
+    protected static function emptyCartData()
+    {
+        $ctx = Context::getContext();
+        $idCustomer = (isset($ctx->customer) && Validate::isLoadedObject($ctx->customer)) ? (int) $ctx->customer->id : 0;
+        $idCountry = (isset($ctx->country) && Validate::isLoadedObject($ctx->country))
+            ? (int) $ctx->country->id : (int) Configuration::get('PS_COUNTRY_DEFAULT');
+
+        return [
+            'sig' => '',
+            'products' => [],
+            'cats' => [],
+            'disc' => 0.0,
+            'disc_wt' => 0.0,
+            'weight' => 0.0,
+            'known' => false,
+            'id_country' => $idCountry,
+            'id_state' => 0,
+            'id_zone' => (int) Country::getIdZone($idCountry),
+            'is_company' => false,
+            'id_customer' => $idCustomer,
+            'groups' => array_map('intval', (array) Customer::getGroupsStatic($idCustomer)),
+            'id_shop' => (int) $ctx->shop->id,
+            'id_currency' => (int) $ctx->currency->id,
+        ];
+    }
+
+    /**
+     * Títulos públicos de las reglas de portes gratis (cuando no sabemos la dirección).
+     */
+    protected static function unknownTitles($free, $data, $maxTitles)
+    {
+        $titles = [];
+        foreach ($free as $rule) {
+            $t = trim((string) $rule['title']);
+            if ($t === '' || isset($titles[$t])) {
+                continue;
+            }
+            $r = null;
+            if (!self::staticChecks($rule, $data['id_shop'], $data['id_currency'], $r)
+                || !self::customerChecks($rule, $data, $r)) {
+                continue;
+            }
+            $titles[$t] = $t;
+            if (count($titles) >= (int) $maxTitles) {
+                break;
+            }
+        }
+
+        return $titles ? ['mode' => 'unknown', 'titles' => array_values($titles)] : null;
+    }
+
+    /**
+     * Combinación elegida a partir de los grupos de atributos del formulario de la ficha.
+     *
+     * @param int $idProduct
+     * @param array $groups id_attribute_group => id_attribute
+     *
+     * @return int
+     */
+    public static function resolveCombination($idProduct, $groups)
+    {
+        $ids = [];
+        foreach ((array) $groups as $v) {
+            if ((int) $v > 0) {
+                $ids[] = (int) $v;
+            }
+        }
+        if ($ids) {
+            try {
+                $ipa = (int) Product::getIdProductAttributeByIdAttributes((int) $idProduct, $ids, true);
+                if ($ipa) {
+                    return $ipa;
+                }
+            } catch (Exception $e) {
+                // combinación que no existe: se usa la de por defecto
+            }
+        }
+
+        return (int) Product::getDefaultAttribute((int) $idProduct);
+    }
+
+    /**
+     * Barra de la ficha: el carrito actual MÁS el producto que se está viendo (combinación y cantidad).
+     *
+     * @return array|null ['mode' => with_product|remaining_with|unknown, ...]
+     */
+    public static function productBarState($cart, $idProduct, $idProductAttribute, $qty, $maxTitles = 3)
+    {
+        $idProduct = (int) $idProduct;
+        $qty = max(1, (int) $qty);
+        $free = [];
+        foreach (self::getRules() as $rule) {
+            if ((int) $rule['effect'] === JosraEnvioGratisRule::EFFECT_FREE) {
+                $free[] = $rule;
+            }
+        }
+        if (!$free || !$idProduct) {
+            return null;
+        }
+        $hasCart = $cart instanceof Cart && Validate::isLoadedObject($cart);
+        $data = $hasCart ? self::cartData($cart) : null;
+        if (!$data) {
+            $data = self::emptyCartData();
+            $hasCart = false;
+        }
+
+        if (!$data['known']) {
+            return self::unknownTitles($free, $data, $maxTitles);
+        }
+
+        // Línea "virtual" con el producto que se está viendo.
+        $ipa = (int) $idProductAttribute;
+        $info = self::productInfo($idProduct);
+        $ctx = Context::getContext();
+        $unitWt = (float) Product::getPriceStatic($idProduct, true, $ipa ?: null, 6, null, false, true, $qty);
+        $unit = (float) Product::getPriceStatic($idProduct, false, $ipa ?: null, 6, null, false, true, $qty);
+        $w = (float) Db::getInstance()->getValue(
+            'SELECT `weight` FROM `' . _DB_PREFIX_ . 'product` WHERE `id_product` = ' . $idProduct
+        );
+        if ($ipa) {
+            $w += (float) Db::getInstance()->getValue(
+                'SELECT `weight` FROM `' . _DB_PREFIX_ . 'product_attribute` WHERE `id_product_attribute` = ' . $ipa
+            );
+        }
+        $name = (string) Db::getInstance()->getValue(
+            'SELECT `name` FROM `' . _DB_PREFIX_ . 'product_lang` WHERE `id_product` = ' . $idProduct
+            . ' AND `id_lang` = ' . (int) $ctx->language->id . ' AND `id_shop` = ' . (int) $ctx->shop->id
+        );
+        $data['products'][] = [
+            'id_product' => $idProduct,
+            'id_product_attribute' => $ipa,
+            'cart_quantity' => $qty,
+            'total' => $unit * $qty,
+            'total_wt' => $unitWt * $qty,
+            'id_manufacturer' => $info['id_manufacturer'],
+            'id_supplier' => $info['id_supplier'],
+            'name' => $name,
+        ];
+        $data['cats'][$idProduct] = $info['cats'];
+        $data['weight'] += $w * $qty;
+
+        $candidates = [];
+        if ($hasCart && (int) $cart->id_carrier) {
+            $candidates[] = (int) $cart->id_carrier;
+        } else {
+            $candidates = self::zoneCarriers($data['id_zone'], $data['id_shop']);
+        }
+        if (!$candidates) {
+            return null;
+        }
+        $evalCart = $hasCart ? $cart : new Cart();
+
+        $best = null;
+        ++self::$guard;
+        try {
+            foreach ($free as $rule) {
+                // El porte de un carrito hipotético no se conoce: aquí se compara solo con los productos.
+                $rule['amount_shipping'] = 0;
+                foreach ($candidates as $idCarrier) {
+                    $ev = self::evaluateRule($rule, $data, $evalCart, $idCarrier, true);
+                    if (!$ev['ok']) {
+                        continue;
+                    }
+                    if (!$ev['only_min']) {
+                        return ['mode' => 'with_product', 'rule' => $rule];
+                    }
+                    $left = self::round($ev['min'] - $ev['amount']);
+                    if ($left > 0 && ($best === null || $left < $best['remaining'])) {
+                        $best = [
+                            'mode' => 'remaining_with',
+                            'rule' => $rule,
+                            'remaining' => $left,
+                            'amount' => $ev['amount'],
+                            'min' => $ev['min'],
+                            'progress' => $ev['min'] > 0 ? (int) floor($ev['amount'] * 100 / $ev['min']) : 0,
+                            'id_currency' => $data['id_currency'],
+                        ];
+                    }
+                }
+            }
+        } finally {
+            --self::$guard;
         }
 
         return $best;

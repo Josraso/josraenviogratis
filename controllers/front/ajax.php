@@ -35,13 +35,33 @@ class JosraenviogratisAjaxModuleFrontController extends ModuleFrontController
         $allowed = ['cart', 'modal', 'checkout', 'product', 'custom'];
         $positions = explode(',', (string) Tools::getValue('positions'));
         $idProduct = (int) Tools::getValue('jeg_product');
+        $ipa = 0;
+        $qty = max(1, (int) Tools::getValue('qty', 1));
+        if ($idProduct) {
+            // Combinación elegida: la que manda PrestaShop en el evento o, si no, la de los atributos del formulario.
+            $ipa = (int) Tools::getValue('jeg_ipa');
+            $groups = Tools::getValue('group');
+            if (!$ipa && is_array($groups) && $groups) {
+                $ipa = JosraEnvioGratisEngine::resolveCombination($idProduct, $groups);
+            }
+            if ($ipa) {
+                $belongs = (int) Db::getInstance()->getValue(
+                    'SELECT `id_product` FROM `' . _DB_PREFIX_ . 'product_attribute` WHERE `id_product_attribute` = ' . (int) $ipa
+                );
+                if ($belongs !== $idProduct) {
+                    $ipa = JosraEnvioGratisEngine::resolveCombination($idProduct, []);
+                }
+            }
+        }
         $html = [];
         foreach ($positions as $pos) {
             $pos = trim($pos);
             if (!in_array($pos, $allowed) || isset($html[$pos])) {
                 continue;
             }
-            $html[$pos] = $this->module->renderInner($pos, $pos === 'product' ? $idProduct : 0);
+            $html[$pos] = $pos === 'product'
+                ? $this->module->renderInner($pos, $idProduct, $ipa, $qty)
+                : $this->module->renderInner($pos);
         }
         if (ob_get_level()) {
             @ob_end_clean();

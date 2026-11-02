@@ -10,6 +10,47 @@
   var timer = null;
   var busy = false;
   var pending = false;
+  var lastIpa = 0;
+
+  /**
+   * Datos del formulario de la ficha: atributos elegidos (group[x]) y cantidad.
+   */
+  function productFormParams(idProduct) {
+    var forms = document.querySelectorAll('#add-to-cart-or-refresh, form.add-to-cart-or-refresh, .product-actions form');
+    var form = null;
+    for (var i = 0; i < forms.length; i++) {
+      var idInput = forms[i].querySelector('[name="id_product"]');
+      if (!idInput || parseInt(idInput.value, 10) === idProduct) {
+        form = forms[i];
+        break;
+      }
+    }
+    var out = [];
+    var qty = 1;
+    if (form) {
+      var fields = form.querySelectorAll('[name^="group["]');
+      for (var j = 0; j < fields.length; j++) {
+        var f = fields[j];
+        if ((f.type === 'radio' || f.type === 'checkbox') && !f.checked) {
+          continue;
+        }
+        out.push(encodeURIComponent(f.name) + '=' + encodeURIComponent(f.value));
+      }
+      var q = form.querySelector('[name="qty"]');
+      if (q) {
+        qty = parseInt(q.value, 10) || 1;
+      }
+      var ipaInput = form.querySelector('[name="id_product_attribute"]');
+      if (!lastIpa && ipaInput) {
+        lastIpa = parseInt(ipaInput.value, 10) || 0;
+      }
+    }
+    out.push('qty=' + encodeURIComponent(qty));
+    if (lastIpa) {
+      out.push('jeg_ipa=' + encodeURIComponent(lastIpa));
+    }
+    return out.join('&');
+  }
 
   function boxes() {
     return document.querySelectorAll('.josraenviogratis-box[data-jeg-pos]');
@@ -80,6 +121,7 @@
     xhr.send(
       'ajax=1&positions=' + encodeURIComponent(positions.join(',')) +
       '&jeg_product=' + encodeURIComponent(idProduct) +
+      (idProduct ? '&' + productFormParams(idProduct) : '') +
       '&_=' + Date.now()
     );
   }
@@ -95,12 +137,29 @@
     if (typeof prestashop === 'undefined' || !prestashop || typeof prestashop.on !== 'function') {
       return;
     }
+    prestashop.on('updatedProduct', function (event) {
+      // PrestaShop manda aquí la combinación que ha quedado elegida.
+      if (event && event.id_product_attribute !== undefined) {
+        lastIpa = parseInt(event.id_product_attribute, 10) || 0;
+      }
+      schedule();
+    });
+    prestashop.on('updateProduct', function () {
+      lastIpa = 0;
+    });
     prestashop.on('updateCart', schedule);
     prestashop.on('updatedCart', schedule);
     prestashop.on('updatedDeliveryForm', schedule);
     prestashop.on('changedCheckoutStep', schedule);
     prestashop.on('updatedAddressForm', schedule);
   }
+
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t && t.name === 'qty' && document.querySelector('.josraenviogratis-box[data-jeg-pos="product"]')) {
+      schedule();
+    }
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', bind);
