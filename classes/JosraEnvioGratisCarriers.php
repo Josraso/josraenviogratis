@@ -328,6 +328,39 @@ class JosraEnvioGratisCarriers
     }
 
     /**
+     * Transportistas que estaban adoptados y que su módulo original ha vuelto a reclamar
+     * (external_module_name ya no es este módulo). Se quitan de la tabla de originales.
+     *
+     * @return array [['name' => ..., 'module' => ...]]
+     */
+    public static function reclaimed()
+    {
+        $rows = Db::getInstance()->executeS(
+            'SELECT j.`id_carrier`, c.`name`, c.`external_module_name`, c.`deleted`
+             FROM `' . _DB_PREFIX_ . 'josraenviogratis_carrier` j
+             LEFT JOIN `' . _DB_PREFIX_ . 'carrier` c ON (c.`id_carrier` = j.`id_carrier`)
+             WHERE c.`id_carrier` IS NULL OR c.`external_module_name` <> \'' . pSQL(self::MODULE) . '\''
+        );
+        $out = [];
+        if (!is_array($rows)) {
+            return $out;
+        }
+        foreach ($rows as $r) {
+            if ($r['name'] !== null && !(int) $r['deleted'] && (string) $r['external_module_name'] !== '') {
+                $out[] = [
+                    'name' => (string) $r['name'] === '0' ? (string) Configuration::get('PS_SHOP_NAME') : (string) $r['name'],
+                    'module' => (string) $r['external_module_name'],
+                ];
+            }
+            Db::getInstance()->execute(
+                'DELETE FROM `' . _DB_PREFIX_ . 'josraenviogratis_carrier` WHERE `id_carrier` = ' . (int) $r['id_carrier']
+            );
+        }
+
+        return $out;
+    }
+
+    /**
      * id_carrier => id_reference (incluye borrados, para pedidos antiguos y copias).
      *
      * @return array

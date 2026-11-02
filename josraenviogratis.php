@@ -31,7 +31,7 @@ class Josraenviogratis extends Module
     {
         $this->name = 'josraenviogratis';
         $this->tab = 'shipping_logistics';
-        $this->version = '1.0.1';
+        $this->version = '1.0.2';
         $this->author = 'josra';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -759,7 +759,8 @@ class Josraenviogratis extends Module
             }
             JosraEnvioGratisCarriers::saveModes($modes);
             JosraEnvioGratisCarriers::sync();
-            Tools::redirectAdmin($this->adminUrl(['jeg_tab' => 'carriers', 'jeg_conf' => 5]));
+            Tools::redirectAdmin($this->adminUrl(['jeg_tab' => 'carriers', 'jeg_conf' => 5]
+                + (Tools::getValue('jeg_cfilter') === 'all' ? ['jeg_cfilter' => 'all'] : [])));
         }
         if (Tools::isSubmit('submitJegReleaseAll')) {
             // Se guardan todos como "no gestionar" para que la autorreparación no los vuelva a coger.
@@ -881,6 +882,20 @@ class Josraenviogratis extends Module
                 if ($row['type'] === JosraEnvioGratisCarriers::TYPE_ADOPTED) {
                     ++$managed;
                 }
+            }
+            $lost = JosraEnvioGratisCarriers::reclaimed();
+            if ($lost) {
+                $names = [];
+                foreach ($lost as $l) {
+                    $names[] = htmlspecialchars($l['name'], ENT_QUOTES, 'UTF-8') . ' (' . htmlspecialchars($l['module'], ENT_QUOTES, 'UTF-8') . ')';
+                }
+                $alerts[] = [
+                    'type' => 'warning',
+                    'text' => sprintf(
+                        $this->l('Estos transportistas estaban gestionados por este módulo y su propio módulo los ha vuelto a configurar como suyos (normalmente al guardar su configuración de transportistas): %s. Las reglas ya no les afectan. Si quieres que vuelvan a tener portes gratis, avísame: no se recuperan solos para no pisar a ese módulo.'),
+                        implode(', ', $names)
+                    ),
+                ];
             }
             if ($activeRules && !$managed) {
                 $alerts[] = [
@@ -1087,15 +1102,21 @@ class Josraenviogratis extends Module
         ];
     }
 
-    protected function getCarrierOptions()
+    /**
+     * Transportistas para elegir en una regla: solo los activos, más los desactivados que la regla ya
+     * tenga elegidos (para no perderlos al guardar).
+     */
+    protected function getCarrierOptions($selected = [])
     {
         $ps9 = JosraEnvioGratisEngine::isPs9();
-        $modes = JosraEnvioGratisCarriers::getModes();
         $out = [];
         $seen = [];
         foreach (JosraEnvioGratisCarriers::listCarriers(false) as $row) {
             $ref = (int) $row['id_reference'] ?: (int) $row['id_carrier'];
             if (isset($seen[$ref])) {
+                continue;
+            }
+            if (!(int) $row['active'] && !in_array($ref, $selected)) {
                 continue;
             }
             $seen[$ref] = true;
@@ -1631,8 +1652,8 @@ class Josraenviogratis extends Module
             'description' => $this->l('Vacío = todos. Si eliges varias cosas tienen que cumplirse todas (por ejemplo, zona Europa y provincia Madrid).'),
             'input' => [
                 ['type' => 'swap', 'name' => 'carriers', 'label' => $this->l('Transportistas'), 'size' => 6,
-                    'options' => ['query' => $this->getCarrierOptions(), 'id' => 'id', 'name' => 'name'],
-                    'desc' => $this->l('Se guardan por referencia: si editas el transportista en PrestaShop la regla lo sigue reconociendo.'), ],
+                    'options' => ['query' => $this->getCarrierOptions(JosraEnvioGratisEngine::csv($rule->carriers)), 'id' => 'id', 'name' => 'name'],
+                    'desc' => $this->l('Solo salen los transportistas activos. Se guardan por referencia: si editas el transportista en PrestaShop la regla lo sigue reconociendo.'), ],
                 ['type' => 'swap', 'name' => 'zones', 'label' => $this->l('Zonas'), 'size' => 6,
                     'options' => ['query' => $this->getZoneOptions(), 'id' => 'id', 'name' => 'name'], ],
                 ['type' => 'swap', 'name' => 'countries', 'label' => $this->l('Países'), 'size' => 7,
@@ -1765,8 +1786,17 @@ class Josraenviogratis extends Module
     {
         $ps9 = JosraEnvioGratisEngine::isPs9();
         $modes = JosraEnvioGratisCarriers::getModes();
+        $showAll = Tools::getValue('jeg_cfilter') === 'all';
         $rows = [];
+        $total = 0;
+        $active = 0;
         foreach (JosraEnvioGratisCarriers::listCarriers(false) as $row) {
+            ++$total;
+            if ((int) $row['active']) {
+                ++$active;
+            } elseif (!$showAll) {
+                continue;
+            }
             $origType = $row['type'] === JosraEnvioGratisCarriers::TYPE_ADOPTED
                 ? JosraEnvioGratisCarriers::originalType((int) $row['id_carrier'])
                 : $row['type'];
@@ -1798,7 +1828,12 @@ class Josraenviogratis extends Module
         return $this->fetchAdmin('carriers.tpl', [
             'jeg_ps9' => $ps9,
             'jeg_carriers' => $rows,
-            'jeg_form_url' => $this->adminUrl(['jeg_tab' => 'carriers']),
+            'jeg_show_all' => $showAll,
+            'jeg_count_total' => $total,
+            'jeg_count_active' => $active,
+            'jeg_url_active' => $this->adminUrl(['jeg_tab' => 'carriers']),
+            'jeg_url_all' => $this->adminUrl(['jeg_tab' => 'carriers', 'jeg_cfilter' => 'all']),
+            'jeg_form_url' => $this->adminUrl(['jeg_tab' => 'carriers'] + ($showAll ? ['jeg_cfilter' => 'all'] : [])),
         ]);
     }
 

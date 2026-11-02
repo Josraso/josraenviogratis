@@ -2,12 +2,20 @@
  * @author    josra
  * @copyright josra
  *}
+{capture name='jeg_cfilter'}
+  <div class="btn-group jeg-cfilter" role="group">
+    <a href="{$jeg_url_active|escape:'html':'UTF-8'}" class="btn btn-default{if !$jeg_show_all} active{/if}">{l s='Solo activos' mod='josraenviogratis'} ({$jeg_count_active|intval})</a>
+    <a href="{$jeg_url_all|escape:'html':'UTF-8'}" class="btn btn-default{if $jeg_show_all} active{/if}">{l s='Todos' mod='josraenviogratis'} ({$jeg_count_total|intval})</a>
+  </div>
+{/capture}
 {if $jeg_ps9}
   <div class="panel">
     <div class="panel-heading"><i class="icon-truck"></i> {l s='Transportistas' mod='josraenviogratis'}</div>
     <div class="alert alert-success">
       {l s='En PrestaShop 9 el módulo ajusta el porte con el hook del carrito, después de que cada transportista (también los de módulos como MBE o Correos Express) haya calculado su precio. No se modifica ningún transportista y todos se pueden usar en las reglas.' mod='josraenviogratis'}
     </div>
+    {$smarty.capture.jeg_cfilter nofilter}
+
     <table class="table">
       <thead>
         <tr>
@@ -41,6 +49,8 @@
       <div class="alert alert-warning">
         {l s='Importante: no borres la carpeta del módulo por FTP sin desinstalarlo antes. Si la carpeta desaparece, PrestaShop no encuentra el módulo y los transportistas gestionados dejan de salir en el pedido. Lo mismo al migrar la tienda: instala el módulo en la tienda nueva o pulsa antes "Devolver todos a su estado original".' mod='josraenviogratis'}
       </div>
+
+      {$smarty.capture.jeg_cfilter nofilter}
 
       <table class="table">
         <thead>
@@ -98,7 +108,7 @@
               </td>
             </tr>
           {foreachelse}
-            <tr><td colspan="5">{l s='No hay transportistas.' mod='josraenviogratis'}</td></tr>
+            <tr><td colspan="5">{if $jeg_show_all}{l s='No hay transportistas.' mod='josraenviogratis'}{else}{l s='No hay transportistas activos. Pulsa "Todos" para ver los desactivados.' mod='josraenviogratis'}{/if}</td></tr>
           {/foreach}
         </tbody>
       </table>
