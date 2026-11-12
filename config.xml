@@ -2,7 +2,7 @@
 <module>
     <name>josraenviogratis</name>
     <displayName><![CDATA[Envío gratis con reglas]]></displayName>
-    <version><![CDATA[1.0.3]]></version>
+    <version><![CDATA[1.0.4]]></version>
     <description><![CDATA[Portes gratis o rebajados por importe, productos, zona, transportista y más, sin reglas de descuento: el transporte sale a 0 € en el pedido y en la factura.]]></description>
     <author><![CDATA[josra]]></author>
     <tab><![CDATA[shipping_logistics]]></tab>

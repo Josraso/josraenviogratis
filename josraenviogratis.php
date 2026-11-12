@@ -15,6 +15,7 @@ if (!defined('_PS_VERSION_')) {
 require_once dirname(__FILE__) . '/classes/JosraEnvioGratisRule.php';
 require_once dirname(__FILE__) . '/classes/JosraEnvioGratisCarriers.php';
 require_once dirname(__FILE__) . '/classes/JosraEnvioGratisEngine.php';
+require_once dirname(__FILE__) . '/classes/JosraenviogratisUpdater.php';
 
 class Josraenviogratis extends Module
 {
@@ -31,7 +32,7 @@ class Josraenviogratis extends Module
     {
         $this->name = 'josraenviogratis';
         $this->tab = 'shipping_logistics';
-        $this->version = '1.0.3';
+        $this->version = '1.0.4';
         $this->author = 'josra';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -42,6 +43,23 @@ class Josraenviogratis extends Module
         $this->displayName = $this->l('Envío gratis con reglas');
         $this->description = $this->l('Portes gratis o rebajados por importe, productos, zona, transportista y más, sin reglas de descuento: el transporte sale a 0 € en el pedido y en la factura.');
         $this->confirmUninstall = $this->l('Se borrarán las reglas y los transportistas volverán a como estaban. ¿Seguro?');
+    }
+
+    public function getUpdater()
+    {
+        return new JosraenviogratisUpdater($this);
+    }
+
+    /** Aviso periódico al servidor de actualizaciones (solo en el back-office) */
+    public function hookActionAdminControllerSetMedia($params)
+    {
+        $this->getUpdater()->maybePing();
+    }
+
+    /** PS 8.1+: la versión nueva aparece en Gestor de módulos > Actualizaciones */
+    public function hookActionListModules($params)
+    {
+        return $this->getUpdater()->getNativeModuleList();
     }
 
     /* ======================================================================
@@ -59,6 +77,7 @@ class Josraenviogratis extends Module
             return false;
         }
         $this->ensureHooks();
+        $this->getUpdater()->registerHooks();
         $this->ensureConfig();
         Configuration::updateGlobalValue('JEG_DB_VERSION', self::DB_VERSION);
         JosraEnvioGratisCarriers::sync();
@@ -68,6 +87,12 @@ class Josraenviogratis extends Module
 
     public function uninstall()
     {
+        $this->getUpdater()->notifyUninstall();
+        Configuration::deleteByName('JOSRAENVIOGRATIS_UPD_TS');
+        Configuration::deleteByName('JOSRAENVIOGRATIS_UPD_INFO');
+        Configuration::deleteByName('JOSRAENVIOGRATIS_UPD_SU');
+        Configuration::deleteByName('JOSRAENVIOGRATIS_UPD_LT');
+
         // Primero se devuelven los transportistas a su estado original.
         JosraEnvioGratisCarriers::releaseAll();
 
@@ -738,7 +763,9 @@ class Josraenviogratis extends Module
         $repair = $this->selfRepair();
         JosraEnvioGratisEngine::resetCache();
 
-        $out = '';
+        // Servidor de actualizaciones: botones del panel, hooks y upgrades pendientes
+        $updater = $this->getUpdater();
+        $out = $updater->processRequest();
         $errors = [];
         $confirm = '';
 
@@ -881,7 +908,7 @@ class Josraenviogratis extends Module
             'txtRemove' => $this->l('Quitar'),
         ]) . ';</script>';
 
-        $out .= $js . $this->fetchAdmin('configure.tpl', [
+        $forms = $js . $this->fetchAdmin('configure.tpl', [
             'jeg_tabs' => $tabLinks,
             'jeg_active_tab' => $tab,
             'jeg_content' => $content,
@@ -893,7 +920,13 @@ class Josraenviogratis extends Module
                 : sprintf($this->l('PrestaShop %s: el porte se ajusta a través de los transportistas gestionados por el módulo (pestaña Transportistas).'), _PS_VERSION_),
         ]);
 
-        return $out;
+        // Panel de actualizaciones: arriba si hay versión nueva, abajo si no
+        $info = $updater->getInfo();
+        $panel = $updater->renderPanel();
+
+        return !empty($info['update_available'])
+            ? $out . $panel . $forms
+            : $out . $forms . $panel;
     }
 
     protected function buildAlerts($repair)
